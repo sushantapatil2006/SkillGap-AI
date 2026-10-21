@@ -16,6 +16,7 @@ services:
       retries: 20
   api:
     build: .
+    image: skillgap-ai-api
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://skillgap:skillgap_local@db:5432/skillgap
