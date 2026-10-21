@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: skillgap
+      POSTGRES_PASSWORD: skillgap_local
+      POSTGRES_DB: skillgap
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skillgap -d skillgap"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://skillgap:skillgap_local@db:5432/skillgap
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./artifacts:/srv/skillgap/artifacts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", ".venv/bin/alembic upgrade head && exec .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      start_period: 30s
+      retries: 20
+volumes:
+  postgres_data:
