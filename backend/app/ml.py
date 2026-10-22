@@ -71,6 +71,26 @@ class Predictor:
             for name in [skill["name"], *skill["aliases"]]:
                 self.aliases[name.casefold()] = skill["id"]
 
+    def evaluation_summary(self):
+        test = self.metadata.get("test", {})
+        baseline = self.metadata.get("majority_baseline_test", {})
+        below_baseline = (
+            test.get("accuracy") is not None
+            and baseline.get("accuracy") is not None
+            and test["accuracy"] <= baseline["accuracy"]
+        )
+        return {
+            "status": "below_majority_baseline"
+            if below_baseline
+            else "student_validity_unestablished",
+            "intended_use": "course_demo",
+            "test_accuracy": test.get("accuracy"),
+            "test_macro_f1": test.get("macro_f1"),
+            "test_top_3_accuracy": test.get("top_3_accuracy"),
+            "majority_baseline_accuracy": baseline.get("accuracy"),
+            "student_evaluation_available": self.metadata.get("student_evaluation") is not None,
+        }
+
     def predict(self, profile, answers):
         text = profile_text(profile, answers)
         vector = self.pipeline.named_steps["tfidf"].transform([text])
@@ -145,6 +165,8 @@ class Predictor:
         return {
             "model_version": self.version,
             "dataset_version": self.metadata["dataset_version"],
+            "evaluation": self.evaluation_summary(),
+            "dataset_provenance": self.metadata.get("provenance"),
             "roles": results,
             "unrecognized_skills": unknown,
             "preferences": {
@@ -153,6 +175,14 @@ class Predictor:
                 "weekly_time_budget": answers.get("time_budget"),
             },
             "limitations": [
+                *(
+                    [
+                        "This model's test accuracy was lower than always predicting the most common role. Treat its rankings as a course demonstration, not reliable career advice."
+                    ]
+                    if self.evaluation_summary()["status"] == "below_majority_baseline"
+                    else []
+                ),
+                "Dataset-derived role requirements and proficiency targets are provisional; they have not been independently validated.",
                 "Model scores are uncalibrated ranking signals, not probabilities of getting hired.",
                 "Job-text classification may not generalize to student profiles; review held-out student evaluation before use in career decisions.",
                 "Scenario scores provide separate evidence and do not establish technical mastery.",

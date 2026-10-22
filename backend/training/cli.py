@@ -9,6 +9,7 @@ from uuid import uuid4
 import joblib
 import numpy as np
 import sklearn
+from sklearn.dummy import DummyClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
@@ -94,6 +95,7 @@ def train(dataset: Dataset, output: Path):
         evaluation = metrics(pipeline, texts[val_idx], labels[val_idx])
         candidates.append((evaluation["macro_f1"], pipeline, evaluation, regularization))
     _, selected, validation, regularization = max(candidates, key=lambda value: value[0])
+    baseline = DummyClassifier(strategy="prior").fit(texts[train_idx], labels[train_idx])
     metadata = {
         "dataset_version": dataset.version,
         "provenance": dataset.provenance,
@@ -102,6 +104,11 @@ def train(dataset: Dataset, output: Path):
         "selected_C": regularization,
         "validation": validation,
         "test": metrics(selected, texts[test_idx], labels[test_idx]),
+        "majority_baseline_test": metrics(baseline, texts[test_idx], labels[test_idx]),
+        "split_groups": {
+            name: sorted(set(groups[indices]))
+            for name, indices in [("train", train_idx), ("validation", val_idx), ("test", test_idx)]
+        },
         "split": {
             name: [dataset.jobs[i].id for i in indices]
             for name, indices in [("train", train_idx), ("validation", val_idx), ("test", test_idx)]

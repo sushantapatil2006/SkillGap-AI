@@ -2,7 +2,9 @@
 
 FastAPI backend for career profiles, a versioned skills assessment, and dataset-driven career recommendations. Python 3.12+, PostgreSQL 16, SQLAlchemy, Alembic and scikit-learn.
 
-The application starts with **empty skill/job catalogs and no trained model**. No sample users, dataset records, quiz seeds, or placeholder predictions are inserted. The authored assessment is versioned source content in `app/assessment.py`, served directly and snapshotted with each attempt. It requires no database seeding or paid AI API.
+Fresh clones start with **empty skill/job catalogs and no trained model**; the configured development workspace now uses the uploaded course dataset. No sample users, quiz seeds, or placeholder predictions are inserted. The authored assessment is versioned source content in `app/assessment.py`, served directly and snapshotted with each attempt. It requires no database seeding or paid AI API.
+
+The initial course dataset is a user-provided archive stored locally at `data/big_data_job_listings.csv.zip` and excluded from Git. Its source URL and license were not supplied, and its structure suggests synthetic data. The preparation step consolidates 51 overlapping titles into 13 role families and normalizes 100 requirement phrases into 99 skills. The trained model reaches only **6.54% held-out accuracy**, below a 19.64% majority-class baseline. This is a working course demonstration, not a validated career predictor. See [the evaluation report](docs/model-evaluation.md).
 
 ## Start locally
 
@@ -49,9 +51,9 @@ Refresh tokens are opaque, hashed in the database, and rotated atomically by `PO
 
 Passwords use Argon2id. Access tokens check issuer, audience, signature, expiry and token type. Attempt and result access is restricted to the owner. Validation errors omit raw inputs. For public deployment, configure HTTPS, `ENVIRONMENT=production`, `COOKIE_SECURE=true`, private database credentials, backups and gateway rate limits for login/registration. Email verification, password reset and a distributed abuse limiter are outside this first version.
 
-## Real datasets and training
+## Datasets and training
 
-See [the dataset contract](docs/dataset-contract.md) before your teammate finalizes exports. The application consumes one versioned JSON bundle containing skill taxonomy, role requirements, job descriptions and optional independently labeled student profiles. JSON Schema can be printed with:
+See [the dataset contract](docs/dataset-contract.md) for future exports. The application consumes one versioned JSON bundle containing skill taxonomy, role requirements, job descriptions and optional independently labeled student profiles. JSON Schema can be printed with:
 
 ```sh
 uv run skillgap-data schema
@@ -59,6 +61,25 @@ uv run skillgap-data validate data/dataset.json
 uv run skillgap-data import data/dataset.json
 uv run skillgap-data train data/dataset.json --output artifacts/baseline-v1.joblib
 ```
+
+For the initial uploaded archive, first create the validated contract bundle:
+
+```sh
+uv run python -m training.prepare_big_data data/big_data_job_listings.csv.zip --output data/dataset.json
+```
+
+The adapter uses company as the leakage-control group and excludes job title, salary, location, benefits and employment type from classifier text. Role-skill weights and levels are dataset-derived heuristics and require subject-matter review before stronger claims. The original 607-row role-description file and the 36,944-line skill list are not part of this model: its taxonomy comes directly from the uploaded listings.
+
+The current workspace's selected artifact is `artifacts/big-data-v2.joblib`, with the matching `.json` manifest. Reproduce it after placing the uploaded archive under `data/`:
+
+```sh
+uv run python -m training.prepare_big_data data/big_data_job_listings.csv.zip --output data/dataset.json
+uv run skillgap-data validate data/dataset.json
+uv run skillgap-data import data/dataset.json
+OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 uv run skillgap-data train data/dataset.json --output artifacts/big-data-v2.joblib
+```
+
+Set `MODEL_PATH=artifacts/big-data-v2.joblib` in your private `.env`, rebuild the API if code changed, then run `docker compose up -d --no-build --wait`. Use a new output filename when retraining; existing artifacts are not overwritten. The raw archive, converted bundle and models are ignored by Git, so a new clone needs those files or these preparation steps. The response `evaluation` object exposes measured test scores and `below_majority_baseline` status. Frontends should display the accompanying limitation alongside predictions.
 
 The import command transactionally upserts only the skill and role catalogs; source job/student records stay in the private dataset file. Re-importing the same catalog is safe. It does not remove old catalog entries. Keep versions in separate source files and review catalog removals explicitly.
 
@@ -76,9 +97,10 @@ uv run ruff format --check .
 uv run pytest -q
 uv run alembic check
 uv run python scripts/smoke.py
+uv run python scripts/smoke.py --require-model
 ```
 
-The smoke command requires a running API and creates then deletes a temporary account and assessment. It does not add dataset records or train a model.
+The smoke command requires a running API and creates then deletes a temporary account and assessment. It does not add dataset records or train a model. `--require-model` additionally checks a real prediction, three ranked roles, gaps, recommendations, imported catalogs, and persisted/idempotent results; a missing model fails that check.
 
 Tests use temporary SQLite databases by default and contain isolated unit-test fixtures/doubles only; they do not seed the application, train a deployable model, or populate production catalogs. To verify against PostgreSQL, create a **dedicated disposable test database**, then:
 
@@ -87,7 +109,7 @@ docker compose exec -T db createdb -U skillgap skillgap_test
 TEST_DATABASE_URL=postgresql+psycopg://skillgap:skillgap_local@localhost:5432/skillgap_test uv run pytest -q
 ```
 
-**The test suite upgrades and downgrades its selected database for each API test. Never point `TEST_DATABASE_URL` at your application database.** Tests exercise token rotation, account ownership, profile validation, assessment branching/immutability, missing-model behavior, dataset references and artifact checksum checks. Model accuracy remains unverified until real data is supplied.
+**The test suite upgrades and downgrades its selected database for each API test. Never point `TEST_DATABASE_URL` at your application database.** Tests exercise token rotation, account ownership, profile validation, assessment branching/immutability, missing-model behavior, dataset references and artifact checksum checks. Accuracy on the uploaded listings is documented in the evaluation report; student-profile validity remains untested.
 
 ## Layout
 

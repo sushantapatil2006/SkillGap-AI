@@ -67,7 +67,11 @@ def create_app():
     def model_status():
         try:
             predictor = get_predictor()
-            return {"status": "available", "version": predictor.version}
+            return {
+                "status": "available",
+                "version": predictor.version,
+                "evaluation": predictor.evaluation_summary(),
+            }
         except ModelUnavailable:
             raise HTTPException(503, {"code": "model_unavailable"}) from None
 

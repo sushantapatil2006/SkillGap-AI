@@ -156,3 +156,15 @@ def test_prediction_math_aliases_and_unassessed_skills():
     assert result["skill_gaps"][0]["basis"] == "not_assessed"
     assert result["recommendations"][0]["skill_id"] == "skill_a"
     assert output["unrecognized_skills"] == ["Unknown"]
+    assert output["evaluation"]["test_accuracy"] is None
+    assert output["evaluation"]["student_evaluation_available"] is False
+    predictor.metadata.update(
+        {
+            "test": {"accuracy": 0.06, "macro_f1": 0.06, "top_3_accuracy": 0.22},
+            "majority_baseline_test": {"accuracy": 0.19},
+        }
+    )
+    result = predictor.predict({"skills": []}, {})
+    assert result["evaluation"]["status"] == "below_majority_baseline"
+    assert result["evaluation"]["test_accuracy"] == 0.06
+    assert any("most common role" in message for message in result["limitations"])
