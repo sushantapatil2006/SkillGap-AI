@@ -154,9 +154,35 @@ def main():
         sub.add_argument("dataset", type=Path)
         if command == "train":
             sub.add_argument("--output", type=Path, required=True)
+    predict_sub = subparsers.add_parser("predict", help="Predict career roles for a candidate profile")
+    predict_sub.add_argument("--model", type=Path, default=Path("artifacts/model.joblib"), help="Path to .joblib artifact")
+    predict_sub.add_argument("--profile", type=Path, help="Path to profile JSON file")
+    predict_sub.add_argument("--evidence", type=str, default="Python and SQL data analysis with ETL pipelines.", help="Text evidence")
+
     args = parser.parse_args()
     if args.command == "schema":
         print(json.dumps(Dataset.model_json_schema(), indent=2))
+        return
+    if args.command == "predict":
+        from app.ml import load_predictor
+        if not args.model.exists():
+            parser.exit(1, f"Model not found at {args.model}. Train a model first.\n")
+        manifest_path = args.model.with_suffix(".json")
+        predictor = load_predictor(str(args.model.resolve()), args.model.stat().st_mtime_ns, manifest_path.stat().st_mtime_ns)
+        if args.profile and args.profile.exists():
+            profile_data = json.loads(args.profile.read_text(encoding="utf-8"))
+        else:
+            profile_data = {
+                "project_summary": args.evidence,
+                "experience_summary": args.evidence,
+                "skills": [
+                    {"name": "Python", "level": 3},
+                    {"name": "SQL", "level": 2},
+                    {"name": "Data Analysis", "level": 2},
+                ],
+            }
+        prediction = predictor.predict(profile_data, {"track": "data", "time_budget": "10_hours"})
+        print(json.dumps(prediction, indent=2))
         return
     try:
         dataset = read_dataset(args.dataset)

@@ -147,19 +147,24 @@ class Predictor:
             gaps.sort(key=lambda gap: (not gap["required"], -gap["priority_score"]))
             roadmap = learning_plan(self.skills, claims, gaps)
             role_vector = self.pipeline.named_steps["tfidf"].transform([role["description"]])
+            compat_score = round(100 * weighted / total, 1) if total > 0 else 0.0
             results.append(
                 {
+                    "rank": len(results) + 1,
                     "role_id": role["id"],
                     "title": role["title"],
+                    "role_title": role["title"],
                     "model_score": round(float(scores[index]), 4),
                     "text_similarity": round(
                         float(cosine_similarity(vector, role_vector)[0, 0]), 4
                     ),
-                    "compatibility_score": round(100 * weighted / total, 1),
-                    "compatibility_basis": "Weighted coverage of required skills using self-reported proficiency; absent skills mean unassessed, not proven inability.",
+                    "compatibility_score": compat_score,
+                    "compatibility": compat_score,
                     "strengths": strengths,
                     "skill_gaps": gaps,
+                    "gaps": gaps,
                     "recommendations": roadmap,
+                    "learning_plan": roadmap,
                 }
             )
         return {
@@ -168,6 +173,7 @@ class Predictor:
             "evaluation": self.evaluation_summary(),
             "dataset_provenance": self.metadata.get("provenance"),
             "roles": results,
+            "recommendations": results,
             "unrecognized_skills": unknown,
             "preferences": {
                 "desired_roles": profile.get("desired_roles", []),

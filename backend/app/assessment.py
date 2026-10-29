@@ -373,8 +373,11 @@ def merge_answers(definition, existing, incoming):
             if not isinstance(value, str) or len(value) > q["max_length"]:
                 raise HTTPException(422, f"Invalid text for {q['id']}")
             value = value.strip()
-            if q["required"] and not value:
-                raise HTTPException(422, f"Answer required for {q['id']}")
+            if value:
+                result[q["id"]] = value
+            else:
+                result.pop(q["id"], None)
+            continue
         result[q["id"]] = value
     # Changing tracks discards answers that are no longer applicable.
     return {key: value for key, value in result.items() if active(questions[key], result)}
