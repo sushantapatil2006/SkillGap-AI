@@ -86,12 +86,27 @@ export function Workspace() {
     }
   }, [user])
 
+  async function refreshCareerResults() {
+    try {
+      const attemptsList = await listAttempts()
+      setAttempts(attemptsList || [])
+      const latestCompleted = (attemptsList || []).find((a) => a.status === 'completed')
+      if (latestCompleted) {
+        const res = await getCareerResult(latestCompleted.id)
+        setLatestResult(res)
+      }
+    } catch (err) {
+      console.warn('Failed to refresh career result:', err)
+    }
+  }
+
   async function handleSaveProfile(updatedProfile) {
     try {
       const saved = await saveProfile(updatedProfile)
       setProfile(saved)
       setShowProfileModal(false)
       notify('Profile successfully saved to database!')
+      await refreshCareerResults()
     } catch (err) {
       if (err.status === 401) {
         notify('Session expired. Please sign in again.')
@@ -126,6 +141,7 @@ export function Workspace() {
       const saved = await saveProfile(updatedProfile)
       setProfile(saved)
       notify(`${newSkill.name} added to your database profile!`)
+      await refreshCareerResults()
     } catch (err) {
       notify(`Failed to save skill: ${err.message}`)
     }

@@ -216,7 +216,7 @@ def prepare(path: Path, output: Path):
                     "skill_id": skill_id,
                     "level": level,
                     "weight": round(1 + 9 * score / selected[0][0], 3),
-                    "required": rank < 10,
+                    "required": rank < 5,
                 }
             )
         roles.append(

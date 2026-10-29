@@ -71,6 +71,69 @@ class Predictor:
             for name in [skill["name"], *skill["aliases"]]:
                 self.aliases[name.casefold()] = skill["id"]
 
+        common_aliases = {
+            "pytorch": "deep_learning",
+            "torch": "deep_learning",
+            "tensorflow": "deep_learning",
+            "tf": "deep_learning",
+            "keras": "deep_learning",
+            "neural networks": "deep_learning",
+            "scikit-learn": "machine_learning",
+            "sklearn": "machine_learning",
+            "ml": "machine_learning",
+            "xgboost": "machine_learning",
+            "lightgbm": "machine_learning",
+            "postgresql": "sql",
+            "postgres": "sql",
+            "mysql": "sql",
+            "sqlite": "sql",
+            "sql server": "sql",
+            "mssql": "sql",
+            "oracle": "sql",
+            "mariadb": "sql",
+            "plsql": "sql",
+            "tsql": "sql",
+            "python3": "python",
+            "py": "python",
+            "pandas": "data_analysis",
+            "numpy": "data_analysis",
+            "scipy": "data_analysis",
+            "excel": "data_analysis",
+            "data analytics": "data_analysis",
+            "tableau": "data_visualization",
+            "power bi": "data_visualization",
+            "powerbi": "data_visualization",
+            "matplotlib": "data_visualization",
+            "seaborn": "data_visualization",
+            "plotly": "data_visualization",
+            "aws": "cloud_computing",
+            "azure": "cloud_computing",
+            "gcp": "cloud_computing",
+            "google cloud": "cloud_computing",
+            "snowflake": "data_warehousing",
+            "redshift": "data_warehousing",
+            "bigquery": "data_warehousing",
+            "teradata": "data_warehousing",
+            "kafka": "apache_kafka",
+            "pyspark": "spark",
+            "airflow": "data_pipelines",
+            "etl": "etl_extract_transform_load",
+            "nlp": "natural_language_processing_nlp",
+            "llm": "natural_language_processing_nlp",
+            "transformers": "natural_language_processing_nlp",
+            "huggingface": "natural_language_processing_nlp",
+            "dbt": "data_transformation",
+            "docker": "data_engineering",
+            "kubernetes": "data_engineering",
+            "k8s": "data_engineering",
+            "software development": "data_engineering",
+            "software engineering": "data_engineering",
+            "coding": "python",
+        }
+        for alias, skill_id in common_aliases.items():
+            if skill_id in self.skills and alias not in self.aliases:
+                self.aliases[alias] = skill_id
+
     def evaluation_summary(self):
         test = self.metadata.get("test", {})
         baseline = self.metadata.get("majority_baseline_test", {})
@@ -93,6 +156,13 @@ class Predictor:
 
     def predict(self, profile, answers):
         text = profile_text(profile, answers)
+        extra_terms = []
+        for claim in profile.get("skills", []):
+            mapped_id = self.aliases.get(claim.get("name", "").casefold())
+            if mapped_id and mapped_id in self.skills:
+                extra_terms.append(self.skills[mapped_id]["name"])
+        if extra_terms:
+            text = f"{text} {' '.join(extra_terms)}".strip()
         vector = self.pipeline.named_steps["tfidf"].transform([text])
         if not vector.nnz:
             raise ModelUnavailable(
@@ -116,11 +186,14 @@ class Predictor:
             role = self.roles[str(self.pipeline.classes_[index])]
             weighted, total = 0.0, 0.0
             gaps, strengths = [], []
+            required_requirements = [req for req in role["requirements"] if req.get("required")]
+            top_5_required_ids = {req["skill_id"] for req in required_requirements[:5]}
             for requirement in role["requirements"]:
                 id = requirement["skill_id"]
                 level = claims.get(id, 0)
                 target = requirement["level"]
-                if requirement["required"]:
+                is_required = id in top_5_required_ids
+                if is_required:
                     weighted += requirement["weight"] * min(level / target, 1)
                     total += requirement["weight"]
                 if level >= target:
@@ -135,7 +208,7 @@ class Predictor:
                             "reported_level": level,
                             "required_level": target,
                             "gap": target - level,
-                            "required": requirement["required"],
+                            "required": is_required,
                             "priority_score": round(
                                 requirement["weight"] * (target - level) / target, 4
                             ),

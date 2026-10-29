@@ -101,6 +101,58 @@ def put_profile(
         profile = Profile(user_id=user.id)
         db.add(profile)
     profile.data = body.model_dump()
+
+    # Automatically recalculate compatibility and recommendations whenever skills or profile are updated
+    try:
+        predictor = get_predictor()
+    except Exception:
+        predictor = None
+
+    if predictor:
+        attempts = db.scalars(
+            select(Attempt)
+            .where(Attempt.user_id == user.id)
+            .order_by(Attempt.created_at.desc())
+        ).all()
+
+        completed_attempt = next((a for a in attempts if a.status == "completed"), None)
+        target_attempt = completed_attempt or (attempts[0] if attempts else None)
+
+        if target_attempt:
+            target_attempt.profile_snapshot = profile.data
+            answers = target_attempt.answers or {}
+            try:
+                new_result = predictor.predict(profile.data, answers)
+                new_result["assessment_version"] = target_attempt.assessment_version
+                new_result["assessment_summary"] = assessment.summarize(target_attempt.definition, answers)
+                prediction = db.scalar(select(Prediction).where(Prediction.attempt_id == target_attempt.id))
+                if prediction:
+                    prediction.result = new_result
+                    prediction.model_version = predictor.version
+                else:
+                    db.add(Prediction(attempt_id=target_attempt.id, model_version=predictor.version, result=new_result))
+            except Exception as e:
+                pass
+        elif profile.data.get("skills"):
+            try:
+                new_attempt = Attempt(
+                    user_id=user.id,
+                    assessment_version=assessment.VERSION,
+                    definition=assessment.definition(),
+                    profile_snapshot=profile.data,
+                    status="completed",
+                    completed_at=datetime.now(UTC),
+                    answers={"track": "data"},
+                )
+                db.add(new_attempt)
+                db.flush()
+                new_result = predictor.predict(profile.data, new_attempt.answers)
+                new_result["assessment_version"] = new_attempt.assessment_version
+                new_result["assessment_summary"] = assessment.summarize(new_attempt.definition, new_attempt.answers)
+                db.add(Prediction(attempt_id=new_attempt.id, model_version=predictor.version, result=new_result))
+            except Exception:
+                pass
+
     db.commit()
     return profile.data
 
